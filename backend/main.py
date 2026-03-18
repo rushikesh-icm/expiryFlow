@@ -6,7 +6,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
-from routers import auth_router, config_router, health_router
+from duckdb_manager import close_duckdb, init_duckdb
+from routers import auth_router, config_router, download_router, health_router
 
 logging.basicConfig(
     level=logging.INFO,
@@ -21,7 +22,9 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Starting ExpiryFlow API")
     init_db()
+    init_duckdb()
     yield
+    close_duckdb()
     logger.info("Shutting down ExpiryFlow API")
 
 
@@ -54,3 +57,4 @@ async def add_security_headers(request, call_next):
 app.include_router(health_router.router)
 app.include_router(config_router.router)
 app.include_router(auth_router.router)
+app.include_router(download_router.router)

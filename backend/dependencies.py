@@ -11,7 +11,10 @@ from config import (
     GENERAL_RATE_LIMIT_MAX,
     GENERAL_RATE_LIMIT_WINDOW,
 )
+import duckdb
+
 from database import get_db
+from duckdb_manager import get_duckdb
 from models import ActiveSession
 from services.session_service import get_active_session, is_session_valid
 
@@ -47,3 +50,4 @@ def require_active_session(db: DbDep) -> ActiveSession:
 
 
 ActiveSessionDep = Annotated[ActiveSession, Depends(require_active_session)]
+DuckDbDep = Annotated[duckdb.DuckDBPyConnection, Depends(get_duckdb)]

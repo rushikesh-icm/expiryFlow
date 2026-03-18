@@ -1,15 +1,10 @@
 import { useAuthStore } from "@/store/auth-store"
 import { ExpiryCountdown } from "@/components/expiry-countdown"
+import { DownloadControls } from "@/components/download-controls"
+import { DownloadProgress } from "@/components/download-progress"
+import { DownloadHistory } from "@/components/download-history"
 import { Separator } from "@/components/ui/separator"
 import { Badge } from "@/components/ui/badge"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
-import { Skeleton } from "@/components/ui/skeleton"
 
 export function DashboardPage() {
   const userName = useAuthStore((s) => s.userName)
@@ -37,34 +32,12 @@ export function DashboardPage() {
 
       <Separator />
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <Card>
-          <CardHeader>
-            <CardTitle>Futures Data</CardTitle>
-            <CardDescription>Coming in Phase 2</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-32 w-full" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Options Data</CardTitle>
-            <CardDescription>Coming in Phase 2</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-32 w-full" />
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Expiry Calendar</CardTitle>
-            <CardDescription>Coming in Phase 2</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <Skeleton className="h-32 w-full" />
-          </CardContent>
-        </Card>
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="flex flex-col gap-6">
+          <DownloadControls />
+          <DownloadProgress />
+        </div>
+        <DownloadHistory />
       </div>
     </div>
   )
