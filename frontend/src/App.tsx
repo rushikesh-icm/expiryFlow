@@ -7,6 +7,7 @@ import { RouteGuard } from "@/components/route-guard"
 import { SetupPage } from "@/pages/setup-page"
 import { LoginPage } from "@/pages/login-page"
 import { DashboardPage } from "@/pages/dashboard-page"
+import { StraddlePage } from "@/pages/straddle-page"
 
 export function App() {
   return (
@@ -22,6 +23,7 @@ export function App() {
         <Route element={<RouteGuard />}>
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
+            <Route path="/straddle" element={<StraddlePage />} />
           </Route>
         </Route>
 

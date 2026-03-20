@@ -80,6 +80,10 @@ def cancel_job(job_id: str):
     _cancel_flags[job_id] = True
 
 
+def get_active_jobs() -> list[dict]:
+    return [j for j in _jobs.values() if j["status"] in ("pending", "running")]
+
+
 def _chunk_date_range(from_date: date, to_date: date) -> list[tuple[date, date]]:
     """Split a date range into chunks of MAX_DAYS_PER_CALL days."""
     chunks = []
@@ -91,33 +95,68 @@ def _chunk_date_range(from_date: date, to_date: date) -> list[tuple[date, date]]
     return chunks
 
 
+def _has_data(
+    duck: duckdb.DuckDBPyConnection,
+    underlying_scrip: str,
+    expiry_flag: str,
+    expiry_code: int,
+    interval: str,
+    strike_label: str,
+    option_type: str,
+    chunk_from: date,
+    chunk_to: date,
+) -> bool:
+    """Check if data already exists for this exact combination and date range."""
+    row = duck.execute(
+        """
+        SELECT COUNT(*) FROM expired_options_ohlcv
+        WHERE underlying_scrip = ?
+          AND expiry_flag = ?
+          AND expiry_code = ?
+          AND interval = ?
+          AND strike_label = ?
+          AND option_type = ?
+          AND CAST(timestamp AS DATE) >= ?
+          AND CAST(timestamp AS DATE) <= ?
+        """,
+        [
+            underlying_scrip, expiry_flag, expiry_code, interval,
+            strike_label, option_type,
+            chunk_from.isoformat(), chunk_to.isoformat(),
+        ],
+    ).fetchone()
+    return row is not None and row[0] > 0
+
+
 def _insert_ohlcv(
     duck: duckdb.DuckDBPyConnection,
     underlying_scrip: str,
     exchange_segment: str,
     instrument: str,
-    strike_label: str,
-    option_type: str,
     expiry_flag: str,
     expiry_code: int,
+    interval: str,
+    strike_label: str,
+    option_type: str,
     bars: list[dict],
 ):
     if not bars:
         return
     for bar in bars:
-        strike_val = bar.get("strike_price") or 0
         duck.execute(
             """
             INSERT OR REPLACE INTO expired_options_ohlcv
-            (underlying_scrip, exchange_segment, instrument, expiry_date,
-             strike_price, option_type, timestamp, open, high, low, close,
+            (underlying_scrip, exchange_segment, instrument,
+             expiry_flag, expiry_code, interval, strike_label, strike_price,
+             option_type, timestamp, open, high, low, close,
              volume, oi, iv, spot)
-            VALUES (?, ?, ?, ?::DATE, ?, ?, ?::TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?::TIMESTAMP, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
                 underlying_scrip, exchange_segment, instrument,
-                "1900-01-01",
-                strike_val, option_type, bar["timestamp"],
+                expiry_flag, expiry_code, interval, strike_label,
+                bar.get("strike_price"),
+                option_type, bar["timestamp"],
                 bar.get("open"), bar.get("high"), bar.get("low"), bar.get("close"),
                 bar.get("volume"), bar.get("oi"),
                 bar.get("iv"), bar.get("spot"),
@@ -130,10 +169,11 @@ def _record_metadata(
     underlying_scrip: str,
     exchange_segment: str,
     instrument: str,
-    strike_label: str,
-    option_type: str,
     expiry_flag: str,
     expiry_code: int,
+    interval: str,
+    strike_label: str,
+    option_type: str,
     from_date: str,
     to_date: str,
     row_count: int,
@@ -141,14 +181,15 @@ def _record_metadata(
     duck.execute(
         """
         INSERT INTO download_metadata
-        (id, underlying_scrip, exchange_segment, instrument, expiry_date,
-         strike_price, option_type, from_date, to_date, row_count, downloaded_at)
+        (id, underlying_scrip, exchange_segment, instrument,
+         expiry_flag, expiry_code, interval, strike_label,
+         option_type, from_date, to_date, row_count, downloaded_at)
         VALUES (nextval('download_metadata_id_seq'), ?, ?, ?,
-                ?::DATE, 0, ?, ?::DATE, ?::DATE, ?, CURRENT_TIMESTAMP)
+                ?, ?, ?, ?, ?, ?::DATE, ?::DATE, ?, CURRENT_TIMESTAMP)
         """,
         [
             underlying_scrip, exchange_segment, instrument,
-            "1900-01-01",
+            expiry_flag, expiry_code, interval, strike_label,
             option_type, from_date, to_date, row_count,
         ],
     )
@@ -207,6 +248,13 @@ def run_download_job(
                 return
 
             try:
+                # Skip API call if data already exists for this chunk
+                if _has_data(duck, underlying_scrip, expiry_flag, expiry_code, interval, strike_label, storage_ot, chunk_from, chunk_to):
+                    logger.info("Skipping %s %s %s [%s-%s] — data exists", underlying_scrip, strike_label, storage_ot, chunk_from, chunk_to)
+                    job["skipped_requests"] += 1
+                    job["completed_requests"] += 1
+                    continue
+
                 rate_limiter.wait_if_needed()
                 result = fetch_rolling_option(
                     access_token=access_token,
@@ -223,8 +271,8 @@ def run_download_job(
                     to_date=chunk_to.isoformat(),
                 )
                 for ot_key, bars in result.items():
-                    _insert_ohlcv(duck, underlying_scrip, exchange_segment, instrument, strike_label, ot_key, expiry_flag, expiry_code, bars)
-                    _record_metadata(duck, underlying_scrip, exchange_segment, instrument, strike_label, ot_key, expiry_flag, expiry_code, chunk_from.isoformat(), chunk_to.isoformat(), len(bars))
+                    _insert_ohlcv(duck, underlying_scrip, exchange_segment, instrument, expiry_flag, expiry_code, interval, strike_label, ot_key, bars)
+                    _record_metadata(duck, underlying_scrip, exchange_segment, instrument, expiry_flag, expiry_code, interval, strike_label, ot_key, chunk_from.isoformat(), chunk_to.isoformat(), len(bars))
                     job["rows_downloaded"] += len(bars)
                 job["completed_requests"] += 1
             except RuntimeError as e:
@@ -281,8 +329,8 @@ def start_download_thread(
 def get_download_history(duck: duckdb.DuckDBPyConnection) -> list[dict]:
     rows = duck.execute(
         """
-        SELECT underlying_scrip, expiry_date, strike_price, option_type,
-               from_date, to_date, row_count, downloaded_at
+        SELECT underlying_scrip, expiry_flag, expiry_code, interval, strike_label,
+               option_type, from_date, to_date, row_count, downloaded_at
         FROM download_metadata
         ORDER BY downloaded_at DESC
         LIMIT 100
@@ -291,13 +339,15 @@ def get_download_history(duck: duckdb.DuckDBPyConnection) -> list[dict]:
     return [
         {
             "underlying_scrip": r[0],
-            "expiry_date": str(r[1]),
-            "strike_price": r[2],
-            "option_type": r[3],
-            "from_date": str(r[4]),
-            "to_date": str(r[5]),
-            "row_count": r[6],
-            "downloaded_at": str(r[7]),
+            "expiry_flag": r[1],
+            "expiry_code": r[2],
+            "interval": r[3],
+            "strike_label": r[4],
+            "option_type": r[5],
+            "from_date": str(r[6]),
+            "to_date": str(r[7]),
+            "row_count": r[8],
+            "downloaded_at": str(r[9]),
         }
         for r in rows
     ]

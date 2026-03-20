@@ -53,10 +53,10 @@ export function DownloadHistory() {
                 className="flex flex-wrap items-center gap-2 rounded-md border p-3 text-sm"
               >
                 <Badge variant="secondary">{item.underlying_scrip}</Badge>
-                <span className="font-mono">{item.strike_price}</span>
                 <Badge variant="secondary">{item.option_type}</Badge>
+                <span className="font-mono text-xs">{item.strike_label}</span>
                 <span className="text-muted-foreground">
-                  Exp: {item.expiry_date}
+                  {item.expiry_flag}/{item.expiry_code}
                 </span>
                 <span className="text-muted-foreground">
                   {item.from_date} to {item.to_date}

@@ -1,5 +1,3 @@
-import { useEffect } from "react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
@@ -11,6 +9,7 @@ import {
 } from "@/components/ui/card"
 import { downloadsApi } from "@/api/downloads"
 import { useDownloadStore } from "@/store/download-store"
+import { toast } from "sonner"
 
 const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = {
   pending: "secondary",
@@ -21,27 +20,7 @@ const STATUS_VARIANT: Record<string, "default" | "secondary" | "destructive"> = 
 }
 
 export function DownloadProgress() {
-  const { activeJob, setActiveJob, isDownloading } = useDownloadStore()
-
-  useEffect(() => {
-    if (!activeJob || !isDownloading()) return
-
-    const interval = setInterval(async () => {
-      try {
-        const updated = await downloadsApi.progress(activeJob.job_id)
-        setActiveJob(updated)
-        if (updated.status === "completed") {
-          toast.success(`Download completed: ${updated.rows_downloaded} rows`)
-        } else if (updated.status === "failed") {
-          toast.error(updated.error_message || "Download failed")
-        }
-      } catch {
-        // ignore polling errors
-      }
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [activeJob?.job_id, isDownloading()])
+  const { activeJob, isDownloading } = useDownloadStore()
 
   if (!activeJob) return null
 
@@ -72,7 +51,7 @@ export function DownloadProgress() {
           <span>
             Requests: {activeJob.completed_requests}/{activeJob.total_requests}
           </span>
-          <span>Rows: {activeJob.rows_downloaded}</span>
+          <span>Rows: {activeJob.rows_downloaded.toLocaleString()}</span>
           {activeJob.skipped_requests > 0 && (
             <span>Skipped: {activeJob.skipped_requests}</span>
           )}

@@ -97,8 +97,10 @@ class DownloadProgress(BaseModel):
 
 class DownloadHistoryItem(BaseModel):
     underlying_scrip: str
-    expiry_date: str
-    strike_price: float
+    expiry_flag: str
+    expiry_code: int
+    interval: str
+    strike_label: str
     option_type: str
     from_date: str
     to_date: str
@@ -115,3 +117,38 @@ class RateLimitStatus(BaseModel):
     requests_today: int
     daily_limit: int
     daily_remaining: int
+
+
+# --- Straddle schemas ---
+class StraddleUnderlyingsResponse(BaseModel):
+    underlyings: list[str]
+
+
+class StraddleDatesResponse(BaseModel):
+    dates: list[str]
+
+
+class StraddleRow(BaseModel):
+    timestamp: str
+    strike_price: float | None
+    ce_open: float | None
+    ce_high: float | None
+    ce_low: float | None
+    ce_close: float | None
+    pe_open: float | None
+    pe_high: float | None
+    pe_low: float | None
+    pe_close: float | None
+    combined_premium: float | None
+    ce_iv: float | None
+    pe_iv: float | None
+    ce_volume: int | None
+    pe_volume: int | None
+    ce_oi: int | None
+    pe_oi: int | None
+    spot: float | None
+
+
+class StraddleDataResponse(BaseModel):
+    rows: list[StraddleRow]
+    total: int

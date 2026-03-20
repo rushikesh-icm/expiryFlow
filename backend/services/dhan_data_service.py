@@ -1,7 +1,10 @@
 import logging
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 import httpx
+
+IST = ZoneInfo("Asia/Kolkata")
 
 from config import DHAN_DATA_BASE_URL
 
@@ -34,7 +37,7 @@ def _parse_option_data(raw: dict, option_type: str) -> list[dict]:
     for i in range(length):
         ts = timestamps[i]
         if isinstance(ts, (int, float)):
-            ts = datetime.fromtimestamp(ts, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            ts = datetime.fromtimestamp(ts, tz=IST).strftime("%Y-%m-%d %H:%M:%S")
 
         bars.append({
             "timestamp": ts,

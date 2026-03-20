@@ -71,8 +71,10 @@ export interface DownloadProgress {
 
 export interface DownloadHistoryItem {
   underlying_scrip: string
-  expiry_date: string
-  strike_price: number
+  expiry_flag: string
+  expiry_code: number
+  interval: string
+  strike_label: string
   option_type: string
   from_date: string
   to_date: string
@@ -89,4 +91,39 @@ export interface RateLimitStatus {
   requests_today: number
   daily_limit: number
   daily_remaining: number
+}
+
+// --- Straddle types ---
+export interface StraddleUnderlyingsResponse {
+  underlyings: string[]
+}
+
+export interface StraddleDatesResponse {
+  dates: string[]
+}
+
+export interface StraddleRow {
+  timestamp: string
+  strike_price: number | null
+  ce_open: number | null
+  ce_high: number | null
+  ce_low: number | null
+  ce_close: number | null
+  pe_open: number | null
+  pe_high: number | null
+  pe_low: number | null
+  pe_close: number | null
+  combined_premium: number | null
+  ce_iv: number | null
+  pe_iv: number | null
+  ce_volume: number | null
+  pe_volume: number | null
+  ce_oi: number | null
+  pe_oi: number | null
+  spot: number | null
+}
+
+export interface StraddleDataResponse {
+  rows: StraddleRow[]
+  total: number
 }

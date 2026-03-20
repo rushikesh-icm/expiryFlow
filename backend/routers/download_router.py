@@ -16,6 +16,7 @@ from schemas import (
 from services.download_service import (
     cancel_job,
     create_job,
+    get_active_jobs,
     get_download_history,
     get_job,
     rate_limiter,
@@ -77,6 +78,11 @@ def cancel_download(job_id: str, session: ActiveSessionDep) -> MessageResponse:
         raise HTTPException(status_code=404, detail="Job not found")
     cancel_job(job_id)
     return MessageResponse(message="Cancellation requested")
+
+
+@router.get("/active", response_model=list[DownloadProgress])
+def active_downloads(session: ActiveSessionDep) -> list[DownloadProgress]:
+    return [DownloadProgress(**j) for j in get_active_jobs()]
 
 
 @router.get("/history", response_model=DownloadHistoryResponse)

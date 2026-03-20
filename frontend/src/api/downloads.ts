@@ -17,6 +17,9 @@ export const downloadsApi = {
   cancel: (jobId: string) =>
     request<MessageResponse>(`/downloads/${jobId}/cancel`, { method: "POST" }),
 
+  active: () =>
+    request<DownloadProgress[]>("/downloads/active"),
+
   history: () =>
     request<DownloadHistoryResponse>("/downloads/history"),
 
