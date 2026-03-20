@@ -23,7 +23,35 @@ def get_db():
 
 
 def init_db():
-    from models import ActiveSession, ApiConfig  # noqa: F401
+    from models import ActiveSession, ApiConfig, CommissionSlab, LotSize  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+
+    # Seed defaults
+    db = SessionLocal()
+    try:
+        if db.query(CommissionSlab).count() == 0:
+            db.add_all([
+                CommissionSlab(slab_no=1, turnover_from=0, turnover_to=100_000,
+                               brokerage_per_order=20, stt_sell_rate=0.001, exchange_txn_rate=0.0003553,
+                               gst_rate=0.18, sebi_per_crore=10, stamp_duty_buy_rate=0.00004),
+                CommissionSlab(slab_no=2, turnover_from=100_000, turnover_to=1_000_000,
+                               brokerage_per_order=20, stt_sell_rate=0.001, exchange_txn_rate=0.0003553,
+                               gst_rate=0.18, sebi_per_crore=10, stamp_duty_buy_rate=0.00003),
+                CommissionSlab(slab_no=3, turnover_from=1_000_000, turnover_to=10_000_000,
+                               brokerage_per_order=20, stt_sell_rate=0.001, exchange_txn_rate=0.0003553,
+                               gst_rate=0.18, sebi_per_crore=10, stamp_duty_buy_rate=0.00003),
+            ])
+            db.commit()
+
+        if db.query(LotSize).count() == 0:
+            db.add_all([
+                LotSize(symbol="NIFTY", lot_size=65),
+                LotSize(symbol="BANKNIFTY", lot_size=30),
+                LotSize(symbol="SENSEX", lot_size=20),
+            ])
+            db.commit()
+    finally:
+        db.close()
+
     logger.info("Database initialized at %s", DB_PATH)

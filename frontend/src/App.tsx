@@ -8,6 +8,8 @@ import { SetupPage } from "@/pages/setup-page"
 import { LoginPage } from "@/pages/login-page"
 import { DashboardPage } from "@/pages/dashboard-page"
 import { StraddlePage } from "@/pages/straddle-page"
+import { BacktestPage } from "@/pages/backtest-page"
+import { CommissionsPage } from "@/pages/commissions-page"
 
 export function App() {
   return (
@@ -24,6 +26,8 @@ export function App() {
           <Route element={<DashboardLayout />}>
             <Route path="/dashboard" element={<DashboardPage />} />
             <Route path="/straddle" element={<StraddlePage />} />
+            <Route path="/backtest" element={<BacktestPage />} />
+            <Route path="/commissions" element={<CommissionsPage />} />
           </Route>
         </Route>
 

@@ -38,3 +38,18 @@ UNDERLYING_META = {
 }
 
 SUPPORTED_UNDERLYINGS = list(UNDERLYING_META.keys())
+
+LOT_SIZES = {
+    "NIFTY": 65,
+    "BANKNIFTY": 30,
+    "SENSEX": 20,
+}
+
+# Margin & commission constants
+MARGIN_RATE = 0.1133  # 11.33% of spot x lot_size
+BROKERAGE_PER_ORDER = 20  # ₹20 per executed order
+STT_SELL_RATE = 0.001  # 0.1% on sell side
+EXCHANGE_TXN_RATE = 0.0003553  # 0.03553% on total turnover
+GST_RATE = 0.18  # 18% on (brokerage + exchange txn)
+SEBI_PER_CRORE = 10  # ₹10 per crore
+STAMP_DUTY_BUY_RATE = 0.00004  # 0.004% on buy side

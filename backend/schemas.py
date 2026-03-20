@@ -166,3 +166,18 @@ class StraddleRow(BaseModel):
 class StraddleDataResponse(BaseModel):
     rows: list[StraddleRow]
     total: int
+
+
+# --- Backtest schemas ---
+class BacktestRequest(BaseModel):
+    underlying_scrip: str
+    expiry_flag: str
+    expiry_code: int = 1
+    from_date: str
+    to_date: str
+    interval: str = "1"
+    capital: float = 1_000_000
+    sizing_mode: str = "fixed_lots"  # fixed_lots, fixed_money, fixed_percentage
+    lots: int = 1
+    fixed_money: float | None = None
+    fixed_percentage: float | None = None

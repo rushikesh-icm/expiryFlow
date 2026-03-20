@@ -9,6 +9,8 @@ import { GlobalDownloadIndicator } from "@/components/global-download-indicator"
 const NAV_ITEMS = [
   { label: "Dashboard", path: "/dashboard" },
   { label: "Straddle", path: "/straddle" },
+  { label: "Backtest", path: "/backtest" },
+  { label: "Commissions", path: "/commissions" },
 ]
 
 export function DashboardLayout() {
