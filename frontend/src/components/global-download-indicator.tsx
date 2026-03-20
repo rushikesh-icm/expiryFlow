@@ -47,9 +47,20 @@ export function GlobalDownloadIndicator() {
         const updated = await downloadsApi.progress(activeJob.job_id)
         setActiveJob(updated)
         if (updated.status === "completed") {
-          toast.success(
-            `Download completed: ${updated.rows_downloaded.toLocaleString()} rows`
-          )
+          const allSkipped =
+            updated.skipped_requests > 0 &&
+            updated.rows_downloaded === 0
+          if (allSkipped) {
+            toast.info(
+              `All ${updated.skipped_requests} requests skipped — data already exists`
+            )
+          } else {
+            const parts = [`${updated.rows_downloaded.toLocaleString()} rows downloaded`]
+            if (updated.skipped_requests > 0) {
+              parts.push(`${updated.skipped_requests} skipped (already existed)`)
+            }
+            toast.success(`Download completed: ${parts.join(", ")}`)
+          }
         } else if (updated.status === "failed") {
           toast.error(updated.error_message || "Download failed")
         }
@@ -80,6 +91,11 @@ export function GlobalDownloadIndicator() {
     }
   }
 
+  const allSkipped =
+    activeJob.status === "completed" &&
+    activeJob.skipped_requests > 0 &&
+    activeJob.rows_downloaded === 0
+
   // Completed / failed / cancelled — show briefly then allow dismiss
   if (!running) {
     return (
@@ -89,10 +105,12 @@ export function GlobalDownloadIndicator() {
             activeJob.status === "completed" ? "default" : "destructive"
           }
         >
-          {activeJob.status}
+          {allSkipped ? "skipped" : activeJob.status}
         </Badge>
         <span className="text-xs text-muted-foreground">
-          {activeJob.rows_downloaded.toLocaleString()} rows
+          {allSkipped
+            ? `${activeJob.skipped_requests} requests — data already exists`
+            : `${activeJob.rows_downloaded.toLocaleString()} rows`}
         </span>
         <Button
           variant="ghost"

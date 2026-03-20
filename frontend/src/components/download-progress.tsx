@@ -28,6 +28,11 @@ export function DownloadProgress() {
     ? Math.round((activeJob.completed_requests / activeJob.total_requests) * 100)
     : 0
 
+  const allSkipped =
+    activeJob.status === "completed" &&
+    activeJob.skipped_requests > 0 &&
+    activeJob.rows_downloaded === 0
+
   const handleCancel = async () => {
     try {
       await downloadsApi.cancel(activeJob.job_id)
@@ -47,20 +52,29 @@ export function DownloadProgress() {
       </CardHeader>
       <CardContent className="flex flex-col gap-4">
         <Progress value={percent} className="h-2" />
-        <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
-          <span>
-            Requests: {activeJob.completed_requests}/{activeJob.total_requests}
-          </span>
-          <span>Rows: {activeJob.rows_downloaded.toLocaleString()}</span>
-          {activeJob.skipped_requests > 0 && (
-            <span>Skipped: {activeJob.skipped_requests}</span>
-          )}
-          {activeJob.failed_requests > 0 && (
-            <span className="text-destructive">
-              Failed: {activeJob.failed_requests}
+        {allSkipped ? (
+          <p className="text-sm text-muted-foreground">
+            All {activeJob.skipped_requests} requests skipped — data already
+            exists in DuckDB
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
+            <span>
+              Requests: {activeJob.completed_requests}/{activeJob.total_requests}
             </span>
-          )}
-        </div>
+            <span>Rows: {activeJob.rows_downloaded.toLocaleString()}</span>
+            {activeJob.skipped_requests > 0 && (
+              <span>
+                Skipped: {activeJob.skipped_requests} (already existed)
+              </span>
+            )}
+            {activeJob.failed_requests > 0 && (
+              <span className="text-destructive">
+                Failed: {activeJob.failed_requests}
+              </span>
+            )}
+          </div>
+        )}
         {activeJob.error_message && (
           <p className="text-sm text-destructive">{activeJob.error_message}</p>
         )}

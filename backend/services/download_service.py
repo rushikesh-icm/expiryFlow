@@ -88,10 +88,10 @@ def _chunk_date_range(from_date: date, to_date: date) -> list[tuple[date, date]]
     """Split a date range into chunks of MAX_DAYS_PER_CALL days."""
     chunks = []
     cursor = from_date
-    while cursor < to_date:
+    while cursor <= to_date:
         chunk_end = min(cursor + timedelta(days=MAX_DAYS_PER_CALL), to_date)
         chunks.append((cursor, chunk_end))
-        cursor = chunk_end
+        cursor = chunk_end + timedelta(days=1)
     return chunks
 
 
@@ -106,18 +106,21 @@ def _has_data(
     chunk_from: date,
     chunk_to: date,
 ) -> bool:
-    """Check if data already exists for this exact combination and date range."""
+    """Check if this chunk was already downloaded by looking at download_metadata.
+
+    Returns True only if a previous download fully covers [chunk_from, chunk_to].
+    """
     row = duck.execute(
         """
-        SELECT COUNT(*) FROM expired_options_ohlcv
+        SELECT COUNT(*) FROM download_metadata
         WHERE underlying_scrip = ?
           AND expiry_flag = ?
           AND expiry_code = ?
           AND interval = ?
           AND strike_label = ?
           AND option_type = ?
-          AND CAST(timestamp AS DATE) >= ?
-          AND CAST(timestamp AS DATE) <= ?
+          AND from_date <= ?
+          AND to_date >= ?
         """,
         [
             underlying_scrip, expiry_flag, expiry_code, interval,
@@ -240,6 +243,8 @@ def run_download_job(
                     all_work.append((strike_label, api_ot, ot, chunk_from, chunk_to))
 
         job["total_requests"] = len(all_work)
+        logger.info("Job %s: %d work items, %d date chunks, %d strikes, %d option types",
+                     job_id, len(all_work), len(date_chunks), len(strike_offsets), len(option_types))
 
         for strike_label, api_ot, storage_ot, chunk_from, chunk_to in all_work:
             if _cancel_flags.get(job_id, False):
