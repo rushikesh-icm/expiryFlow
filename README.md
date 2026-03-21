@@ -102,7 +102,7 @@ The dynamic straddle backtester implements:
 - **Commissions**: Slab-based (brokerage, STT, exchange txn, GST, SEBI, stamp duty)
 - **Margin**: 11.33% of spot x lot_size x lots
 
-## Commission Structure (Default — Zerodha F&O Options)
+## Commission Structure (Default —  F&O Options)
 
 | Component | Slab 1 (≤1L) | Slab 2 (≤10L) | Slab 3 (≤1Cr) |
 |-----------|--------------|---------------|----------------|
