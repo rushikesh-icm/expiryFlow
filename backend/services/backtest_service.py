@@ -64,10 +64,28 @@ def _nearest_strike(spot: float, strike_step: int) -> float:
     return round(spot / strike_step) * strike_step
 
 
+def _is_roll_check_bar(ts: datetime, roll_check_minutes: int | None) -> bool:
+    if roll_check_minutes is None:
+        return True
+    minute_of_day = ts.hour * 60 + ts.minute
+    return minute_of_day % roll_check_minutes == 0
+
+
+def _spot_move_hit(spot_in: float, spot_out: float, trigger_pct: float | None) -> bool:
+    """Return True when Spot In/Out move hits configured percentage trigger."""
+    if trigger_pct is None or spot_in <= 0:
+        return False
+    move_pct = abs((spot_out - spot_in) / spot_in) * 100
+    # Small epsilon to avoid floating-point misses at boundary (e.g., 0.9999999 vs 1.0)
+    return move_pct + 1e-9 >= trigger_pct
+
+
 def run_backtest(duck: duckdb.DuckDBPyConnection, db: Session, params) -> dict:
     underlying = params.underlying_scrip
     meta = UNDERLYING_META[underlying]
     strike_step = meta["strike_step"]
+    roll_check_minutes = getattr(params, "roll_check_minutes", None)
+    spot_move_pct = getattr(params, "spot_move_pct", None)
 
     # Read lot size from SQLite
     lot_row = db.query(LotSize).filter(LotSize.symbol == underlying).first()
@@ -171,7 +189,16 @@ def run_backtest(duck: duckdb.DuckDBPyConnection, db: Session, params) -> dict:
                 drawdown_curve.append({"timestamp": ts.isoformat(), "drawdown_pct": round(dd_pct, 4)})
                 continue
 
-            need_roll = position is None or atm != current_strike
+            should_check_roll = _is_roll_check_bar(ts, roll_check_minutes)
+            # If spot-move trigger is configured, use it as the roll driver.
+            # Keep strike-change roll behavior only when spot trigger is disabled.
+            strike_roll = (spot_move_pct is None) and should_check_roll and atm != current_strike
+
+            spot_roll = False
+            if position and position.get("spot_entry") is not None:
+                spot_roll = _spot_move_hit(position["spot_entry"], spot, spot_move_pct)
+
+            need_roll = position is None or strike_roll or spot_roll
 
             if need_roll:
                 # Exit current position

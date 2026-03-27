@@ -1,4 +1,5 @@
 import logging
+import os
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -11,6 +12,14 @@ from config import DHAN_DATA_BASE_URL
 logger = logging.getLogger(__name__)
 
 REQUIRED_DATA_FIELDS = ["open", "high", "low", "close", "iv", "volume", "strike", "oi", "spot"]
+
+
+def _http_verify() -> str | bool:
+    # Align SSL behavior with auth service for corporate proxy/root-CA environments.
+    verify: str | bool = os.getenv("SSL_CERT_FILE", "/etc/ssl/certs/ca-certificates.crt")
+    if os.getenv("DHAN_SSL_VERIFY", "true").strip().lower() in {"0", "false", "no"}:
+        verify = False
+    return verify
 
 
 def _parse_option_data(raw: dict, option_type: str) -> list[dict]:
@@ -111,7 +120,7 @@ def fetch_rolling_option(
         exchange_segment, security_id, drv_option_type,
         expiry_flag, expiry_code, strike, from_date, to_date,
     )
-    with httpx.Client(timeout=30.0) as client:
+    with httpx.Client(timeout=30.0, verify=_http_verify()) as client:
         response = client.post(url, headers=headers, json=payload)
         if response.status_code != 200:
             logger.error("API error %s: %s | payload: %s", response.status_code, response.text, payload)

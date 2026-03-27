@@ -1,22 +1,13 @@
-import { useEffect, useState, useRef } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Skeleton } from "@/components/ui/skeleton"
 import { Separator } from "@/components/ui/separator"
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select"
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table"
-import {
-  backtestApi,
-  type BacktestRequest,
-  type BacktestResult,
-} from "@/api/backtest"
 import { request } from "@/api/client"
+import type { BacktestRequest, BacktestResult } from "@/api/backtest"
 import {
   createChart, ColorType, type IChartApi,
 } from "lightweight-charts"
@@ -29,37 +20,19 @@ interface UnderlyingMeta {
   strike_step: number
 }
 
-const INTERVALS = [
-  { value: "1", label: "1 min" },
-  { value: "5", label: "5 min" },
-  { value: "15", label: "15 min" },
-]
+type SortTarget = "trades" | "daily_pnl"
+type SortOrder = "asc" | "desc"
 
-const ROLL_CHECK_OPTIONS = [
-  { value: "bar", label: "Every Bar (default)" },
-  { value: "5", label: "Every 5 min" },
-  { value: "10", label: "Every 10 min" },
-  { value: "15", label: "Every 15 min" },
-  { value: "30", label: "Every 30 min" },
-  { value: "60", label: "Every 60 min" },
-]
+type SortSpec =
+  | { target: SortTarget; field: string; order: SortOrder }
+  | null
 
-const SPOT_MOVE_OPTIONS = [
-  { value: "none", label: "Disabled" },
-  { value: "0.1", label: "0.1%" },
-  { value: "0.2", label: "0.2%" },
-  { value: "0.3", label: "0.3%" },
-  { value: "0.4", label: "0.4%" },
-  { value: "0.5", label: "0.5%" },
-  { value: "0.6", label: "0.6%" },
-  { value: "0.7", label: "0.7%" },
-  { value: "0.8", label: "0.8%" },
-  { value: "0.9", label: "0.9%" },
-  { value: "1", label: "1%" },
-]
+type ChatMessage =
+  | { role: "user"; content: string }
+  | { role: "assistant"; content: string; payload?: BacktestRequest; meta?: any }
 
 function fmt(n: number | null | undefined, d = 2) {
-  if (n == null) return "-"
+  if (n == null || Number.isNaN(n)) return "-"
   return n.toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d })
 }
 
@@ -72,7 +45,6 @@ function toChartTime(iso: string): number {
   return Math.floor(new Date(utc).getTime() / 1000)
 }
 
-// --- Lightweight chart component ---
 function LineChart({
   data,
   color,
@@ -120,7 +92,6 @@ function LineChart({
   return <div ref={ref} style={{ height }} className="w-full" />
 }
 
-// --- Metric card ---
 function Metric({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="flex flex-col gap-0.5">
@@ -131,29 +102,58 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
   )
 }
 
-export function BacktestPage() {
+function safeParseDate(s: string): string | null {
+  // expects YYYY-MM-DD
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return null
+  return s
+}
+
+function sortArray<T extends Record<string, any>>(arr: T[], spec: SortSpec): T[] {
+  if (!spec) return arr
+  const { field, order } = spec
+  const dir = order === "asc" ? 1 : -1
+  const copy = [...arr]
+  copy.sort((a, b) => {
+    const av = a[field]
+    const bv = b[field]
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    if (typeof av === "number" && typeof bv === "number") return (av - bv) * dir
+    return String(av).localeCompare(String(bv)) * dir
+  })
+  return copy
+}
+
+export function AiBacktesterPage() {
   const [underlyings, setUnderlyings] = useState<Record<string, UnderlyingMeta>>({})
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<BacktestResult | null>(null)
+  const [sortSpec, setSortSpec] = useState<SortSpec>(null)
+  const [lastPayload, setLastPayload] = useState<BacktestRequest | null>(null)
+  const [lastMeta, setLastMeta] = useState<any>(null)
 
   const today = new Date().toISOString().split("T")[0]
   const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0]
 
-  const [form, setForm] = useState({
+  const defaults: BacktestRequest = useMemo(() => ({
     underlying_scrip: "NIFTY",
     expiry_flag: "WEEK",
-    expiry_code: "1",
+    expiry_code: 1,
     from_date: weekAgo,
     to_date: today,
     interval: "1",
-    capital: "1000000",
+    capital: 1_000_000,
     sizing_mode: "fixed_lots",
-    lots: "1",
-    fixed_money: "",
-    fixed_percentage: "",
-    roll_check_minutes: "bar",
-    spot_move_pct: "none",
-  })
+    lots: 1,
+    fixed_money: null,
+    fixed_percentage: null,
+    roll_check_minutes: null,
+    spot_move_pct: null,
+  }), [today, weekAgo])
+
+  const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [input, setInput] = useState("")
 
   useEffect(() => {
     request<{ underlyings: Record<string, UnderlyingMeta> }>("/underlyings").then((r) =>
@@ -161,177 +161,176 @@ export function BacktestPage() {
     )
   }, [])
 
-  const handleRun = async () => {
+  const handleRunFromText = async () => {
+    const text = input.trim()
+    if (!text) return
+
+    setMessages((m) => [...m, { role: "user", content: text }])
+    setInput("")
     setLoading(true)
     setResult(null)
+
     try {
-      const req: BacktestRequest = {
-        underlying_scrip: form.underlying_scrip,
-        expiry_flag: form.expiry_flag,
-        expiry_code: parseInt(form.expiry_code),
-        from_date: form.from_date,
-        to_date: form.to_date,
-        interval: form.interval,
-        capital: parseFloat(form.capital),
-        sizing_mode: form.sizing_mode,
-        lots: parseInt(form.lots) || 1,
-        fixed_money: form.fixed_money ? parseFloat(form.fixed_money) : null,
-        fixed_percentage: form.fixed_percentage ? parseFloat(form.fixed_percentage) : null,
-        roll_check_minutes: form.roll_check_minutes === "bar" ? null : parseInt(form.roll_check_minutes),
-        spot_move_pct: form.spot_move_pct === "none" ? null : parseFloat(form.spot_move_pct),
-      }
-      const res = await backtestApi.run(req)
-      // Number the trades
-      res.trades.forEach((t, i) => (t.trade_no = i + 1))
-      setResult(res)
+      const resp = await request<{ payload: BacktestRequest; meta: any; result: BacktestResult }>("/ai-backtest/run", {
+        method: "POST",
+        body: {
+          prompt: text,
+          defaults,
+          response: { sort: null },
+        },
+      })
+
+      setLastPayload(resp.payload)
+      setLastMeta(resp.meta || null)
+      setSortSpec(resp.meta?.sort || null)
+
+      resp.result.trades.forEach((t, i) => (t.trade_no = i + 1))
+      setResult(resp.result)
+      setMessages((m) => [...m, { role: "assistant", content: `Backtest completed.`, payload: resp.payload, meta: resp.meta }])
     } catch (err: any) {
-      toast.error(err?.detail || "Backtest failed")
+      const msg = err?.detail || err?.message || "AI backtest failed"
+      setMessages((m) => [...m, { role: "assistant", content: msg }])
+      toast.error(msg)
     } finally {
       setLoading(false)
     }
   }
 
+  const sortedTrades = useMemo(() => {
+    if (!result) return []
+    const spec = sortSpec?.target === "trades" ? sortSpec : null
+    return sortArray(result.trades as any, spec as any)
+  }, [result, sortSpec])
+
+  const sortedDaily = useMemo(() => {
+    if (!result) return []
+    const spec = sortSpec?.target === "daily_pnl" ? sortSpec : null
+    return sortArray(result.daily_pnl as any, spec as any)
+  }, [result, sortSpec])
+
   const m = result?.metrics
+
+  const applied = useMemo(() => {
+    if (!lastPayload) return []
+    const sources = lastMeta?.field_sources || {}
+    const keys = Object.keys(lastPayload) as (keyof BacktestRequest)[]
+    return keys.map((k) => ({
+      key: String(k),
+      value: (lastPayload as any)[k],
+      source: sources[String(k)] || "default",
+    }))
+  }, [lastPayload, lastMeta])
 
   return (
     <div className="flex flex-col gap-6 p-6">
       <div className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Dynamic Straddle Backtest</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">AI Backtester</h1>
         <p className="text-sm text-muted-foreground">
-          ATM straddle with rolling — configurable strike checks and spot-move trigger
+          Describe your strategy and settings in chat. We’ll convert it into a backtest payload and run it.
         </p>
       </div>
 
-      {/* --- Config --- */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Underlying</span>
-              <Select value={form.underlying_scrip} onValueChange={(v) => setForm({ ...form, underlying_scrip: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {Object.keys(underlyings).map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-                </SelectContent>
-              </Select>
+      <Card className="overflow-hidden">
+        <CardHeader className="border-b">
+          <CardTitle>Chat</CardTitle>
+        </CardHeader>
+        <CardContent className="pt-4">
+          <div className="flex flex-col gap-3">
+            <div className="max-h-[260px] overflow-auto rounded-md border p-3">
+              {messages.length === 0 && (
+                <div className="rounded-md bg-muted p-3 text-sm text-muted-foreground">
+                  Tip: Try <span className="font-mono">NIFTY weekly last 7 days interval 1 min capital 10 lakh lots 1 spot trigger 0.5%</span>
+                </div>
+              )}
+              <div className="mt-3 flex flex-col gap-3">
+                {messages.map((msg, idx) => (
+                  <div key={idx} className={msg.role === "user" ? "text-right" : "text-left"}>
+                    <div className="inline-flex max-w-[90%] flex-col gap-2 rounded-lg border bg-card px-3 py-2">
+                      <div className="text-xs text-muted-foreground">{msg.role === "user" ? "You" : "Assistant"}</div>
+                      <div className="text-sm whitespace-pre-wrap">{msg.content}</div>
+                      {"meta" in msg && msg.meta?.warnings?.length > 0 && (
+                        <div className="text-xs text-amber-500">
+                          {msg.meta.warnings.map((w: string, i: number) => <div key={i}>{w}</div>)}
+                        </div>
+                      )}
+                      {"payload" in msg && msg.payload && (
+                        <details className="text-left">
+                          <summary className="cursor-pointer text-xs text-muted-foreground">Applied payload</summary>
+                          <pre className="mt-2 overflow-auto rounded-md bg-muted p-2 text-xs">
+                            {JSON.stringify(msg.payload, null, 2)}
+                          </pre>
+                        </details>
+                      )}
+                    </div>
+                  </div>
+                ))}
+                {loading && (
+                  <div className="text-left">
+                    <div className="inline-flex max-w-[90%] flex-col gap-2 rounded-lg border bg-card px-3 py-2">
+                      <div className="text-xs text-muted-foreground">Assistant</div>
+                      <div className="text-sm text-muted-foreground">Running backtest…</div>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Expiry</span>
-              <Select value={form.expiry_flag} onValueChange={(v) => setForm({ ...form, expiry_flag: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="WEEK">Weekly</SelectItem>
-                  <SelectItem value="MONTH">Monthly</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Expiry Code</span>
-              <Select value={form.expiry_code} onValueChange={(v) => setForm({ ...form, expiry_code: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="1">Current</SelectItem>
-                  <SelectItem value="2">Next</SelectItem>
-                  <SelectItem value="3">Far</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Interval</span>
-              <Select value={form.interval} onValueChange={(v) => setForm({ ...form, interval: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {INTERVALS.map((i) => <SelectItem key={i.value} value={i.value}>{i.label}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">From</span>
-              <Input type="date" value={form.from_date} onChange={(e) => setForm({ ...form, from_date: e.target.value })} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">To</span>
-              <Input type="date" value={form.to_date} onChange={(e) => setForm({ ...form, to_date: e.target.value })} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Roll Check</span>
-              <Select value={form.roll_check_minutes} onValueChange={(v) => setForm({ ...form, roll_check_minutes: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {ROLL_CHECK_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+
+            {lastPayload && (
+              <div className="rounded-md border p-3">
+                <div className="text-sm font-medium">Applied filters</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {applied.map((a) => (
+                    <div
+                      key={a.key}
+                      className={
+                        "rounded-full border px-2 py-1 text-xs " +
+                        (a.source === "prompt" ? "bg-accent text-accent-foreground" : "text-muted-foreground")
+                      }
+                      title={a.source === "prompt" ? "From prompt" : "Unable to read prompt; default value used"}
+                    >
+                      <span className="font-medium">{a.key}</span>
+                      <span className="mx-1">=</span>
+                      <span className="font-mono">{a.value === null ? "null" : String(a.value)}</span>
+                      {a.source !== "prompt" && <span className="ml-1">(default)</span>}
+                    </div>
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Spot Move Trigger</span>
-              <Select value={form.spot_move_pct} onValueChange={(v) => setForm({ ...form, spot_move_pct: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {SPOT_MOVE_OPTIONS.map((opt) => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                </div>
+                {lastMeta?.warnings?.length > 0 && (
+                  <div className="mt-2 text-xs text-amber-500">
+                    {lastMeta.warnings.map((w: string, i: number) => <div key={i}>{w}</div>)}
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="flex flex-col gap-2">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                placeholder="Type your configuration in plain English…"
+                className="min-h-[90px] w-full rounded-md border bg-transparent px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-xs text-muted-foreground">
+                  Note: mention weekly/monthly, interval, capital, lots, spot trigger, roll every, and optional sort.
+                </div>
+                <Button onClick={handleRunFromText} disabled={loading || !input.trim()}>
+                  {loading ? "Running..." : "Run"}
+                </Button>
+              </div>
             </div>
           </div>
-
-          <Separator className="my-4" />
-
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Capital</span>
-              <Input type="number" value={form.capital} onChange={(e) => setForm({ ...form, capital: e.target.value })} />
-            </div>
-            <div className="flex flex-col gap-1">
-              <span className="text-xs font-medium text-muted-foreground">Sizing</span>
-              <Select value={form.sizing_mode} onValueChange={(v) => setForm({ ...form, sizing_mode: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fixed_lots">Fixed Lots</SelectItem>
-                  <SelectItem value="fixed_money">Fixed Money</SelectItem>
-                  <SelectItem value="fixed_percentage">Fixed %</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            {form.sizing_mode === "fixed_lots" && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Lots</span>
-                <Input type="number" min="1" value={form.lots} onChange={(e) => setForm({ ...form, lots: e.target.value })} />
-              </div>
-            )}
-            {form.sizing_mode === "fixed_money" && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted-foreground">Amount</span>
-                <Input type="number" value={form.fixed_money} onChange={(e) => setForm({ ...form, fixed_money: e.target.value })} />
-              </div>
-            )}
-            {form.sizing_mode === "fixed_percentage" && (
-              <div className="flex flex-col gap-1">
-                <span className="text-xs font-medium text-muted-foreground">% of Capital</span>
-                <Input type="number" value={form.fixed_percentage} onChange={(e) => setForm({ ...form, fixed_percentage: e.target.value })} />
-              </div>
-            )}
-          </div>
-
-          <Button className="mt-4 w-full" onClick={handleRun} disabled={loading}>
-            {loading ? "Running backtest..." : "Run Backtest"}
-          </Button>
         </CardContent>
       </Card>
 
       {loading && (
-        <div className="flex flex-col gap-4">
-          <Skeleton className="h-20 w-full" />
-          <Skeleton className="h-[300px] w-full" />
-        </div>
+        <Card>
+          <CardContent className="pt-6 text-sm text-muted-foreground">Running backtest…</CardContent>
+        </Card>
       )}
 
-      {/* --- Results --- */}
       {m && result && (
         <>
-          {/* Metrics */}
           <Card>
             <CardHeader className="border-b"><CardTitle>Performance Summary</CardTitle></CardHeader>
             <CardContent className="pt-4">
@@ -342,17 +341,12 @@ export function BacktestPage() {
                 <Metric label="Profit Factor" value={fmt(m.profit_factor)} />
                 <Metric label="Max Drawdown" value={`${m.max_drawdown_pct}%`} sub={`₹${fmt(m.max_drawdown)}`} />
                 <Metric label="Sharpe" value={fmt(m.sharpe_ratio)} />
-                <Metric label="Avg Win" value={`₹${fmt(m.avg_win)}`} />
-                <Metric label="Avg Loss" value={`₹${fmt(m.avg_loss)}`} />
-                <Metric label="Largest Win" value={`₹${fmt(m.largest_win)}`} />
-                <Metric label="Largest Loss" value={`₹${fmt(m.largest_loss)}`} />
                 <Metric label="Lots" value={`${m.lots} (${m.quantity} qty)`} />
-                <Metric label="Avg Daily P&L" value={`₹${fmt(m.avg_daily_pnl)}`} />
+                <Metric label="Total Charges" value={`₹${fmt(m.total_commissions)}`} />
               </div>
               <Separator className="my-4" />
               <div className="grid grid-cols-3 gap-6 sm:grid-cols-4 lg:grid-cols-7">
                 <Metric label="Total Turnover" value={`₹${fmt(m.total_turnover)}`} />
-                <Metric label="Total Charges" value={`₹${fmt(m.total_commissions)}`} />
                 <Metric label="Brokerage" value={`₹${fmt(m.brokerage_total)}`} />
                 <Metric label="STT" value={`₹${fmt(m.stt_total)}`} />
                 <Metric label="Exchange Txn" value={`₹${fmt(m.exchange_txn_total)}`} />
@@ -362,7 +356,6 @@ export function BacktestPage() {
             </CardContent>
           </Card>
 
-          {/* Equity Curve */}
           <Card>
             <CardHeader className="border-b"><CardTitle>Equity Curve</CardTitle></CardHeader>
             <CardContent className="p-2">
@@ -370,7 +363,6 @@ export function BacktestPage() {
             </CardContent>
           </Card>
 
-          {/* Drawdown */}
           <Card>
             <CardHeader className="border-b"><CardTitle>Drawdown</CardTitle></CardHeader>
             <CardContent className="p-2">
@@ -378,9 +370,8 @@ export function BacktestPage() {
             </CardContent>
           </Card>
 
-          {/* Trade Table */}
           <Card>
-            <CardHeader className="border-b"><CardTitle>Trade Log ({result.trades.length} trades)</CardTitle></CardHeader>
+            <CardHeader className="border-b"><CardTitle>Trade Log ({sortedTrades.length} trades)</CardTitle></CardHeader>
             <CardContent className="p-0">
               <div className="max-h-[500px] overflow-auto">
                 <Table>
@@ -392,7 +383,7 @@ export function BacktestPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {result.trades.map((t) => (
+                    {sortedTrades.map((t) => (
                       <TableRow key={t.trade_no} className={t.net_pnl >= 0 ? "" : "text-red-400"}>
                         <TableCell>{t.trade_no}</TableCell>
                         <TableCell className="font-mono text-xs whitespace-nowrap">{fmtTime(t.entry_time)}</TableCell>
@@ -420,7 +411,6 @@ export function BacktestPage() {
             </CardContent>
           </Card>
 
-          {/* Daily P&L */}
           <Card>
             <CardHeader className="border-b"><CardTitle>Daily P&L</CardTitle></CardHeader>
             <CardContent className="p-0">
@@ -434,7 +424,7 @@ export function BacktestPage() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {result.daily_pnl.map((d) => (
+                    {sortedDaily.map((d) => (
                       <TableRow key={d.date} className={d.net_pnl >= 0 ? "" : "text-red-400"}>
                         <TableCell className="font-mono">{d.date}</TableCell>
                         <TableCell className="text-right">{d.trades}</TableCell>
@@ -455,3 +445,4 @@ export function BacktestPage() {
     </div>
   )
 }
+

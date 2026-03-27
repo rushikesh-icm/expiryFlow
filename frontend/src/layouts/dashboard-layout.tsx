@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { label: "Straddle", path: "/straddle" },
   { label: "Backtest", path: "/backtest" },
   { label: "Commissions", path: "/commissions" },
+  { label: "AI Backtester", path: "/ai-backtester" },
 ]
 
 export function DashboardLayout() {

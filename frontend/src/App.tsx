@@ -10,6 +10,7 @@ import { DashboardPage } from "@/pages/dashboard-page"
 import { StraddlePage } from "@/pages/straddle-page"
 import { BacktestPage } from "@/pages/backtest-page"
 import { CommissionsPage } from "@/pages/commissions-page"
+import { AiBacktesterPage } from "@/pages/ai-backtester-page"
 
 export function App() {
   return (
@@ -28,6 +29,7 @@ export function App() {
             <Route path="/straddle" element={<StraddlePage />} />
             <Route path="/backtest" element={<BacktestPage />} />
             <Route path="/commissions" element={<CommissionsPage />} />
+            <Route path="/ai-backtester" element={<AiBacktesterPage />} />
           </Route>
         </Route>
 

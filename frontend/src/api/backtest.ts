@@ -12,6 +12,8 @@ export interface BacktestRequest {
   lots: number
   fixed_money: number | null
   fixed_percentage: number | null
+  roll_check_minutes: number | null
+  spot_move_pct: number | null
 }
 
 export interface BacktestTrade {

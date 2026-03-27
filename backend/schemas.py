@@ -181,3 +181,25 @@ class BacktestRequest(BaseModel):
     lots: int = 1
     fixed_money: float | None = None
     fixed_percentage: float | None = None
+    roll_check_minutes: int | None = None  # None => current behavior (check every bar)
+    spot_move_pct: float | None = None  # Optional roll trigger by spot move %
+
+    @field_validator("roll_check_minutes")
+    @classmethod
+    def valid_roll_check_minutes(cls, v: int | None) -> int | None:
+        if v is None:
+            return v
+        if v <= 0:
+            raise ValueError("roll_check_minutes must be greater than 0")
+        return v
+
+    @field_validator("spot_move_pct")
+    @classmethod
+    def valid_spot_move_pct(cls, v: float | None) -> float | None:
+        if v is None:
+            return v
+        if v <= 0:
+            raise ValueError("spot_move_pct must be greater than 0")
+        if v > 1:
+            raise ValueError("spot_move_pct must be <= 1")
+        return v

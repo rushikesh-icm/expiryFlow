@@ -6,17 +6,19 @@ from config import SESSION_CHECK_BUFFER_MINUTES
 from models import ActiveSession
 
 
-def _get_key(data: dict, *keys: str) -> str:
+def _get_key(data: dict, *keys: str, default: str | None = None) -> str:
     for key in keys:
         if key in data:
             return data[key]
+    if default is not None:
+        return default
     raise KeyError(f"None of {keys} found in response")
 
 
-def save_session(db: Session, data: dict) -> ActiveSession:
+def save_session(db: Session, data: dict, fallback_client_id: str | None = None) -> ActiveSession:
     db.query(ActiveSession).delete()
     session = ActiveSession(
-        dhan_client_id=_get_key(data, "dhanClientId", "dhan_client_id", "clientId"),
+        dhan_client_id=_get_key(data, "dhanClientId", "dhan_client_id", "clientId", default=fallback_client_id),
         dhan_client_name=data.get("dhanClientName", data.get("dhan_client_name", "")),
         access_token=_get_key(data, "accessToken", "access_token"),
         expiry_time=_get_key(data, "expiryTime", "expiry_time"),

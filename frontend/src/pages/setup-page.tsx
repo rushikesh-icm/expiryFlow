@@ -42,7 +42,12 @@ export function SetupPage() {
 
     setIsPending(true)
     try {
-      await configApi.save(form)
+      const exists = await configApi.checkExists().catch(() => ({ exists: false, client_id: null }))
+      if (exists.exists) {
+        await configApi.update(form)
+      } else {
+        await configApi.save(form)
+      }
       setConfigStatus(true, form.client_id)
       toast.success("Configuration saved successfully")
       navigate("/login", { replace: true })

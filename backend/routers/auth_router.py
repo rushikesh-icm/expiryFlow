@@ -34,12 +34,15 @@ def login(data: LoginRequest, db: DbDep) -> LoginResponse:
     except httpx.RequestError as e:
         logger.error("Dhan auth request error: %s", str(e))
         raise HTTPException(status_code=502, detail="Could not connect to Dhan API. Please check your network.")
+    except ValueError as e:
+        logger.warning("Dhan auth validation failed: %s", str(e))
+        raise HTTPException(status_code=401, detail=str(e))
     except Exception as e:
         logger.error("Unexpected error during auth: %s", str(e), exc_info=True)
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+        raise HTTPException(status_code=502, detail=f"Authentication response parse failed: {str(e)}")
 
     try:
-        session = save_session(db, result)
+        session = save_session(db, result, fallback_client_id=config.client_id)
     except Exception as e:
         logger.error("Failed to save session: %s", str(e), exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to save session: {str(e)}")

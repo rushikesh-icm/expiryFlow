@@ -7,7 +7,16 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
 from duckdb_manager import close_duckdb, init_duckdb
-from routers import auth_router, backtest_router, commissions_router, config_router, download_router, health_router, straddle_router
+from routers import (
+    ai_backtest_router,
+    auth_router,
+    backtest_router,
+    commissions_router,
+    config_router,
+    download_router,
+    health_router,
+    straddle_router,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -61,3 +70,4 @@ app.include_router(download_router.router)
 app.include_router(straddle_router.router)
 app.include_router(backtest_router.router)
 app.include_router(commissions_router.router)
+app.include_router(ai_backtest_router.router)
